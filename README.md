@@ -1,5 +1,5 @@
 # bamtools
-Small, distroless-when-possible container for `bamtools`.
+Small compatibility-focused container for `bamtools`.
 
 ## how to use
 ```bash

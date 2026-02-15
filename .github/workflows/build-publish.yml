@@ -1,4 +1,4 @@
-name: Build and Publish Distroless bamtools
+name: Build and Publish bamtools
 
 on:
   push:

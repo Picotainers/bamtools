@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# Distroless-when-possible template for bamtools.
-# Installs package from Bioconda and copies one selected executable + shared libs (if ELF).
+# Compatibility-first template for bamtools.
+# Installs package from Bioconda and copies the full conda runtime to avoid missing libs/interpreters.
 
 FROM mambaorg/micromamba:2.0.5-debian12-slim AS builder
 
@@ -18,18 +18,11 @@ RUN set -eux; \
     test -n "$BIN"; \
     cp -f "$BIN" /tmp/tool-entry && chmod +x /tmp/tool-entry
 
-USER root
+FROM mambaorg/micromamba:2.0.5-debian12-slim
 
-# Collect runtime shared libraries for distroless image when binary is ELF.
-RUN mkdir -p /tmp/runtime-libs && \
-    (ldd "/tmp/tool-entry" 2>/dev/null || true) | \
-    awk '/=> \/|^\// {for(i=1;i<=NF;i++) if ($i ~ /^\//) print $i}' | sort -u | \
-    xargs -r -I{} cp -v --parents "{}" /tmp/runtime-libs || true
-
-FROM gcr.io/distroless/base-debian12
-
+COPY --from=builder /opt/conda /opt/conda
 COPY --from=builder /tmp/tool-entry /usr/local/bin/bamtools
-COPY --from=builder /tmp/runtime-libs/ /
 
+ENV PATH="/opt/conda/bin:${PATH}"
 WORKDIR /data
 ENTRYPOINT ["/usr/local/bin/bamtools"]
