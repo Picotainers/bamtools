@@ -1,7 +1,12 @@
 # bamtools
-Small compatibility-focused container for `bamtools`.
+Source-built `bamtools` container.
 
-## how to use
+## Quick Usage
+
 ```bash
-docker run --rm -v "$(pwd):/data" picotainers/bamtools:latest --help
+# Pull the image
+docker pull docker.io/picotainers/bamtools:latest
+
+# Run the tool
+docker run --rm docker.io/picotainers/bamtools:latest bamtools --help
 ```

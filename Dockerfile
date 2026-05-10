@@ -1,34 +1,41 @@
 # syntax=docker/dockerfile:1
-# Compatibility-first template for bamtools.
-# Installs package from Bioconda and copies the full conda runtime to avoid missing libs/interpreters.
 
-FROM mambaorg/micromamba:2.0.5-debian12-slim AS builder
+FROM debian:bookworm AS builder
 
-RUN micromamba install -y -n base -c conda-forge -c bioconda \
-    bamtools \
-    && micromamba clean --all --yes
+ARG BAMTOOLS_VERSION=v2.5.3
+ARG BAMTOOLS_URL=https://github.com/pezmaster31/bamtools/archive/refs/tags/v2.5.3.tar.gz
 
-# Resolve a runnable command for this package.
-# Prefer exact match, then underscore variant, then prefix match.
-RUN set -eux; \
-    BIN=""; \
-    if [ -x "/opt/conda/bin/bamtools" ]; then BIN="/opt/conda/bin/bamtools"; fi; \
-    if [ -z "$BIN" ]; then CAND="/opt/conda/bin/$(echo bamtools | tr '-' '_')"; [ -x "$CAND" ] && BIN="$CAND" || true; fi; \
-    if [ -z "$BIN" ]; then BIN="$(find /opt/conda/bin -maxdepth 1 -type f -perm -111 -name 'bamtools*' | head -n1 || true)"; fi; \
-    test -n "$BIN"; \
-    printf '%s\n' "$BIN" > /tmp/tool-entry-path
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      ca-certificates curl cmake make g++ zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-FROM mambaorg/micromamba:2.0.5-debian12-slim
+WORKDIR /src
+RUN curl -fsSL "$BAMTOOLS_URL" -o bamtools.tar.gz \
+    && tar -xzf bamtools.tar.gz
 
-COPY --from=builder /opt/conda /opt/conda
-COPY --from=builder /tmp/tool-entry-path /tmp/tool-entry-path
+WORKDIR /src/bamtools-2.5.3/build
+RUN cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/bamtools .. \
+    && make -j"$(nproc)" \
+    && make install \
+    && test -x /opt/bamtools/bin/bamtools \
+    && cp /opt/bamtools/bin/bamtools /tmp/bamtools
 
-USER root
-ENV PATH="/opt/conda/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/opt/conda/lib:/opt/conda/lib64"
-RUN set -eux; \
-    BIN="$(cat /tmp/tool-entry-path)"; \
-    printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "$BIN" > /usr/local/bin/bamtools
-RUN chmod +x /usr/local/bin/bamtools && rm -f /tmp/tool-entry-path
+RUN mkdir -p /tmp/runtime-libs \
+    && (ldd /tmp/bamtools | awk '/=> \/|^\// {for(i=1;i<=NF;i++) if ($i ~ /^\//) print $i}' | sort -u | xargs -r -I{} cp -v --parents "{}" /tmp/runtime-libs) || true
+
+FROM debian:bookworm-slim
+
+COPY --from=builder /opt/bamtools /opt/bamtools
+COPY --from=builder /tmp/runtime-libs/ /
+
+RUN printf '%s\n' '#!/bin/sh' \
+    'if [ "${1:-}" = "bamtools" ]; then shift; fi' \
+    'exec /opt/bamtools/bin/bamtools "$@"' > /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/entrypoint.sh \
+    && ln -sf /opt/bamtools/bin/bamtools /usr/local/bin/bamtools
+
+ENV PATH="/opt/bamtools/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/opt/bamtools/lib"
 WORKDIR /data
-ENTRYPOINT ["/usr/local/bin/bamtools"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
