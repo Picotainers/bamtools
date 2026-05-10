@@ -18,16 +18,16 @@ WORKDIR /src/bamtools-2.5.3/build
 RUN cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/bamtools .. \
     && make -j"$(nproc)" \
     && make install \
-    && test -x /opt/bamtools/bin/bamtools \
-    && cp /opt/bamtools/bin/bamtools /tmp/bamtools
-
-RUN mkdir -p /tmp/runtime-libs \
-    && (ldd /tmp/bamtools | awk '/=> \/|^\// {for(i=1;i<=NF;i++) if ($i ~ /^\//) print $i}' | sort -u | xargs -r -I{} cp -v --parents "{}" /tmp/runtime-libs) || true
+    && test -x /opt/bamtools/bin/bamtools
 
 FROM debian:bookworm-slim
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      ca-certificates libstdc++6 zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /opt/bamtools /opt/bamtools
-COPY --from=builder /tmp/runtime-libs/ /
 
 RUN printf '%s\n' '#!/bin/sh' \
     'if [ "${1:-}" = "bamtools" ]; then shift; fi' \
