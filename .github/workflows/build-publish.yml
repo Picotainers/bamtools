@@ -1,34 +1,54 @@
 name: Build and Publish bamtools
 
 on:
+  pull_request:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
 
 jobs:
-  build-publish:
+  test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Build smoke-test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: picotainers-local/bamtools:smoke
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          docker run --rm picotainers-local/bamtools:smoke --help > help.txt 2>&1
+          grep -Eiq 'bamtools|usage|help|version|options' help.txt
+
+  publish:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
 
       - name: Login to DockerHub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
       - name: Build and push
         id: docker_build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: picotainers/bamtools:latest
+          tags: docker.io/picotainers/bamtools:latest
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
